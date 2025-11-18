@@ -1,0 +1,586 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CinemaLog v9</title>
+    
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: { gray: { 750: '#2d3748', 850: '#1a202c', 950: '#171923' } },
+                    animation: { 
+                        'fade-in': 'fadeIn 0.5s ease-out',
+                        'pop': 'pop 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275)'
+                    },
+                    keyframes: { 
+                        fadeIn: { '0%': { opacity: '0', transform: 'translateY(10px)' }, '100%': { opacity: '1', transform: 'translateY(0)' } },
+                        pop: { '0%': { transform: 'scale(1)' }, '50%': { transform: 'scale(1.3)' }, '100%': { transform: 'scale(1)' } }
+                    }
+                }
+            }
+        }
+    </script>
+    
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+    <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.13.3/dist/cdn.min.js"></script>
+
+    <style>
+        [x-cloak] { display: none !important; }
+        ::-webkit-scrollbar { width: 8px; height: 8px; }
+        ::-webkit-scrollbar-track { background: #1a202c; }
+        ::-webkit-scrollbar-thumb { background: #4a5568; border-radius: 4px; }
+        
+        .gem-border {
+            box-shadow: 0 0 15px 2px rgba(234, 179, 8, 0.3);
+            border-color: #EAB308 !important;
+        }
+        
+        /* PARTICLE ANIMATION FOR SUPER LIKE */
+        .particle {
+            position: fixed;
+            pointer-events: none;
+            animation: fly 0.8s ease-out forwards;
+            border-radius: 50%;
+        }
+        @keyframes fly {
+            0% { transform: translate(0, 0) scale(1); opacity: 1; }
+            100% { transform: translate(var(--tx), var(--ty)) scale(0); opacity: 0; }
+        }
+    </style>
+</head>
+
+<body class="bg-gray-900 text-gray-100 font-sans min-h-screen selection:bg-indigo-500 selection:text-white"
+      x-data="movieApp()"
+      x-init="initApp()">
+
+    <div x-show="showRecs" class="fixed inset-0 z-[95] flex items-center justify-center bg-black/90 backdrop-blur-sm" x-cloak @click.self="showRecs = false">
+        <div class="bg-gray-800 p-6 md:p-8 rounded-xl border border-gray-700 w-full max-w-7xl shadow-2xl overflow-y-auto max-h-[90vh]">
+            <div class="flex flex-col md:flex-row justify-between items-center mb-6 gap-4">
+                <div>
+                    <h2 class="text-2xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-indigo-400 to-purple-400">✨ Next Watch</h2>
+                    <p class="text-sm text-gray-400">AI curated picks (Page randomized for freshness)</p>
+                </div>
+                <div class="flex items-center gap-2">
+                    <select x-model="suggestGenre" @change="generateRecommendations()" class="bg-gray-700 text-white text-sm rounded-lg px-3 py-2 border border-gray-600 focus:ring-2 focus:ring-indigo-500 outline-none cursor-pointer">
+                        <option value="">🎲 Surprise Me (Mixed)</option>
+                        <template x-for="(name, id) in genreMap" :key="id">
+                            <option :value="id" x-text="name"></option>
+                        </template>
+                    </select>
+                    <button @click="showRecs = false" class="text-gray-400 hover:text-white text-2xl ml-2">✕</button>
+                </div>
+            </div>
+
+            <div x-show="recsLoading" class="text-center py-20">
+                <div class="inline-block animate-spin rounded-full h-10 w-10 border-4 border-indigo-500 border-t-transparent"></div>
+                <p class="mt-3 text-gray-400 text-sm animate-pulse">Mining for gems...</p>
+            </div>
+
+            <div x-show="!recsLoading" class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-5">
+                <template x-for="rec in recommendations" :key="rec.id">
+                    <div class="bg-gray-900 rounded-xl overflow-hidden border shadow-lg transition flex flex-col animate-fade-in group relative"
+                         :class="rec.isHiddenGem ? 'gem-border border-yellow-500/50' : 'border-gray-700 hover:border-indigo-500/50'">
+                        
+                        <div x-show="rec.isHiddenGem" class="absolute top-0 inset-x-0 h-6 bg-yellow-500/90 backdrop-blur z-20 flex items-center justify-center shadow-md">
+                            <span class="text-[10px] font-black text-black tracking-widest uppercase flex items-center gap-1">💎 Hidden Gem</span>
+                        </div>
+
+                        <div class="aspect-[2/3] relative overflow-hidden">
+                            <img :src="rec.poster_path ? `https://image.tmdb.org/t/p/w500${rec.poster_path}` : `https://placehold.co/500x750?text=${encodeURIComponent(rec.title)}`" 
+                                 class="w-full h-full object-cover transition duration-700 group-hover:scale-110">
+                            <div class="absolute bottom-2 right-2 bg-black/70 backdrop-blur px-2 py-1 rounded text-xs font-bold text-yellow-400 border border-white/10">
+                                <span x-text="rec.vote_average.toFixed(1)"></span> ★
+                            </div>
+                        </div>
+                        <div class="p-4 flex flex-col flex-grow">
+                            <h3 class="font-bold text-sm text-white mb-1 line-clamp-2" x-text="rec.title"></h3>
+                            <div class="flex items-center gap-2 mb-2">
+                                <span class="text-[10px] text-gray-400" x-text="rec.release_date?.split('-')[0]"></span>
+                            </div>
+                            <p class="text-xs text-gray-400 line-clamp-3 mb-4 flex-grow leading-relaxed" x-text="rec.overview"></p>
+                            <a :href="`https://www.themoviedb.org/movie/${rec.id}`" target="_blank" class="block text-center bg-indigo-600 hover:bg-indigo-500 text-white py-2 rounded text-xs font-bold uppercase tracking-wider transition">
+                                View Details
+                            </a>
+                        </div>
+                    </div>
+                </template>
+            </div>
+            
+            <div x-show="!recsLoading && recommendations.length > 0" class="mt-8 text-center border-t border-gray-700 pt-4">
+                 <button @click="generateRecommendations()" class="px-6 py-2 bg-gray-700 hover:bg-white hover:text-gray-900 rounded-full text-sm font-medium transition duration-300">
+                    🔄 Load New Batch
+                 </button>
+            </div>
+        </div>
+    </div>
+
+    <div x-show="showStats" class="fixed inset-0 z-[90] flex items-center justify-center bg-black/80 backdrop-blur-sm" x-cloak @click.self="showStats = false">
+         <div class="bg-gray-800 p-8 rounded-xl border border-gray-700 w-full max-w-5xl shadow-2xl overflow-y-auto max-h-[90vh]">
+            <div class="flex justify-between items-center mb-8">
+                <h2 class="text-3xl font-bold text-white tracking-tight">Library <span class="text-indigo-500">Analytics</span></h2>
+                <button @click="showStats = false" class="text-gray-500 hover:text-white text-2xl transition">✕</button>
+            </div>
+            
+            <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
+                <div class="bg-gradient-to-br from-gray-800 to-gray-900 p-5 rounded-2xl border border-gray-700 text-center shadow-lg"><div class="text-4xl font-black text-white mb-1" x-text="movies.length"></div><div class="text-[10px] text-gray-400 uppercase tracking-widest font-bold">Total Movies</div></div>
+                <div class="bg-gradient-to-br from-gray-800 to-gray-900 p-5 rounded-2xl border border-gray-700 text-center shadow-lg"><div class="text-4xl font-black text-yellow-400 mb-1" x-text="averageRating"></div><div class="text-[10px] text-gray-400 uppercase tracking-widest font-bold">Avg Score</div></div>
+                <div class="bg-gradient-to-br from-gray-800 to-gray-900 p-5 rounded-2xl border border-gray-700 text-center shadow-lg"><div class="text-4xl font-black text-green-400 mb-1" x-text="watchedCount"></div><div class="text-[10px] text-gray-400 uppercase tracking-widest font-bold">Completed</div></div>
+                <div class="bg-gradient-to-br from-gray-800 to-gray-900 p-5 rounded-2xl border border-gray-700 text-center shadow-lg"><div class="text-4xl font-black text-pink-500 mb-1" x-text="superLikeCount"></div><div class="text-[10px] text-gray-400 uppercase tracking-widest font-bold">Super Likes</div></div>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                <div class="bg-gray-900 p-6 rounded-xl border border-gray-700">
+                    <h3 class="text-sm font-bold text-gray-400 uppercase tracking-wider mb-4">Top Genres</h3>
+                    <div class="space-y-3">
+                        <template x-for="(stat, index) in genreStats" :key="stat.name">
+                            <div>
+                                <div class="flex justify-between text-sm mb-1"><span class="text-gray-200 font-medium" x-text="stat.name"></span><span class="text-gray-500 text-xs" x-text="stat.count"></span></div>
+                                <div class="h-2 bg-gray-800 rounded-full overflow-hidden"><div class="h-full rounded-full" :class="index === 0 ? 'bg-indigo-500' : 'bg-gray-600'" :style="`width: ${(stat.count / movies.length) * 100 * 2}%`"></div></div>
+                            </div>
+                        </template>
+                    </div>
+                </div>
+
+                <div class="bg-gray-900 p-6 rounded-xl border border-gray-700">
+                    <h3 class="text-sm font-bold text-gray-400 uppercase tracking-wider mb-4">Most Watched Actors</h3>
+                    <div class="space-y-3">
+                        <template x-for="(stat, index) in actorStats" :key="stat.name">
+                            <div class="flex items-center gap-3">
+                                <div class="text-lg" x-text="index === 0 ? '🥇' : (index === 1 ? '🥈' : '🥉')"></div>
+                                <div class="flex-grow">
+                                    <div class="text-sm font-bold text-white" x-text="stat.name"></div>
+                                    <div class="text-xs text-gray-500" x-text="stat.count + ' movies'"></div>
+                                </div>
+                            </div>
+                        </template>
+                        <div x-show="actorStats.length === 0" class="text-xs text-gray-500 text-center py-4">Loading Cast Data...</div>
+                    </div>
+                </div>
+
+                <div class="bg-gray-900 p-6 rounded-xl border border-gray-700 flex flex-col justify-center items-center text-center">
+                    <h3 class="text-sm font-bold text-gray-400 uppercase tracking-wider mb-2">Average Release Year</h3>
+                    <div class="text-5xl font-black text-white tracking-tighter" x-text="averageYear"></div>
+                    <p class="text-xs text-gray-500 mt-2">You tend to watch movies from this era.</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <header class="border-b border-gray-800 bg-gray-850 sticky top-0 z-40 shadow-lg backdrop-blur-md bg-opacity-90">
+        <div class="max-w-7xl mx-auto px-4 py-4 flex flex-col md:flex-row items-center justify-between gap-4">
+            <div @dblclick="toggleAdmin()" class="cursor-pointer select-none group" title="Double-click for Admin">
+                <h1 class="text-2xl font-bold text-white tracking-tight flex items-center gap-2">
+                    <span>Cinema<span class="text-indigo-500">Log</span></span>
+                    <span x-show="isAdmin" class="text-[10px] bg-red-600 text-white px-1.5 rounded uppercase tracking-wider animate-fade-in">Admin</span>
+                </h1>
+            </div>
+
+            <div class="relative w-full md:w-96">
+                <input type="text" x-model="search" placeholder="Search library..." 
+                       class="w-full bg-gray-700 text-white rounded-lg pl-10 pr-4 py-2 focus:ring-2 focus:ring-indigo-500 border border-gray-600 text-sm placeholder-gray-400">
+                <svg class="w-4 h-4 absolute left-3 top-3 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
+            </div>
+            
+            <div class="flex gap-2">
+                <button @click="generateRecommendations()" class="px-3 py-2 bg-indigo-600/20 border border-indigo-500/30 hover:bg-indigo-600/40 rounded-lg text-sm text-indigo-200 transition flex items-center gap-2">
+                    <span>✨</span> <span class="hidden sm:inline">Suggest</span>
+                </button>
+                <button @click="showStats = true" class="px-3 py-2 bg-gray-700 hover:bg-gray-600 hover:text-white rounded-lg text-sm text-gray-300 transition flex items-center gap-2">
+                    <span>📊</span> <span class="hidden sm:inline">Stats</span>
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <div class="max-w-7xl mx-auto px-4 py-6">
+        <div class="flex flex-col lg:flex-row gap-4 bg-gray-800 p-4 rounded-xl border border-gray-700 shadow-sm">
+            <div class="flex gap-2 overflow-x-auto pb-1 lg:pb-0 scrollbar-hide">
+                <button @click="filterStatus = 'all'" :class="filterStatus === 'all' ? 'bg-indigo-600 text-white shadow-lg' : 'bg-gray-700 text-gray-300 hover:bg-gray-600'" class="px-4 py-1.5 rounded-lg text-sm font-medium transition whitespace-nowrap">All Movies</button>
+                <button @click="filterStatus = 'watched'" :class="filterStatus === 'watched' ? 'bg-green-600 text-white shadow-lg' : 'bg-gray-700 text-gray-300 hover:bg-gray-600'" class="px-4 py-1.5 rounded-lg text-sm font-medium transition whitespace-nowrap">Watched</button>
+                <button @click="filterStatus = 'watchlist'" :class="filterStatus === 'watchlist' ? 'bg-amber-600 text-white shadow-lg' : 'bg-gray-700 text-gray-300 hover:bg-gray-600'" class="px-4 py-1.5 rounded-lg text-sm font-medium transition whitespace-nowrap">Watchlist</button>
+                <button @click="filterStatus = 'superlike'" :class="filterStatus === 'superlike' ? 'bg-pink-600 text-white shadow-lg' : 'bg-gray-700 text-gray-300 hover:bg-gray-600'" class="px-4 py-1.5 rounded-lg text-sm font-medium transition whitespace-nowrap flex items-center gap-1"><span>❤️</span> Super Likes</button>
+            </div>
+            <div class="ml-auto w-full lg:w-auto">
+                <select x-model="sortBy" class="w-full lg:w-auto bg-gray-700 text-white rounded-lg px-3 py-2 text-sm border border-gray-600 focus:ring-2 focus:ring-indigo-500 outline-none cursor-pointer">
+                    <option value="dateDesc">📅 Date Added (Newest)</option>
+                    <option value="ratingDesc">⭐ Highest Rated</option>
+                    <option value="ratingAsc">🔻 Lowest Rated</option>
+                    <option value="tmdbDesc">🌍 Global Rating (TMDB)</option>
+                    <option value="popularity">🔥 Popularity</option>
+                    <option value="yearDesc">🎬 Year (Newest)</option>
+                    <option value="titleAsc">🔤 Title (A-Z)</option>
+                </select>
+            </div>
+        </div>
+    </div>
+
+    <main class="max-w-7xl mx-auto px-4 pb-12">
+        <div x-show="loading" class="text-center py-20">
+            <div class="inline-block animate-spin rounded-full h-12 w-12 border-4 border-indigo-500 border-t-transparent"></div>
+        </div>
+
+        <div x-cloak x-show="!loading && filteredMovies.length === 0" class="text-center py-20 border-2 border-dashed border-gray-700 rounded-xl bg-gray-800/50">
+            <p class="text-gray-400 text-lg">No movies found.</p>
+        </div>
+
+        <div x-cloak x-show="!loading" class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-6">
+            <template x-for="movie in filteredMovies" :key="movie.uniqueId">
+                <div class="group relative bg-gray-800 rounded-xl overflow-hidden shadow-lg transition-all duration-300 hover:scale-105 hover:shadow-2xl hover:shadow-indigo-500/10"
+                     :class="isSuperLike(movie) ? 'ring-2 ring-pink-500' : 'border border-gray-700'">
+                    
+                    <div x-show="movie.status === 'watchlist'" class="absolute top-0 inset-x-0 h-7 bg-amber-500/90 backdrop-blur z-30 flex items-center justify-center shadow-md">
+                        <span class="text-[10px] font-black text-white tracking-widest uppercase">Yet to Watch</span>
+                    </div>
+
+                    <div @click="openModal(movie)" class="aspect-[2/3] w-full bg-gray-700 relative overflow-hidden cursor-pointer">
+                        <img x-show="tmdbData[movie.uniqueId]?.poster" :src="tmdbData[movie.uniqueId]?.poster" 
+                             class="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105" loading="lazy">
+                        
+                        <div x-show="!tmdbData[movie.uniqueId]?.poster" class="w-full h-full flex flex-col items-center justify-center bg-gray-800 p-4 text-center">
+                             <span class="text-4xl mb-2 opacity-20">🎬</span>
+                             <span class="text-gray-500 font-bold text-sm" x-text="movie.title"></span>
+                        </div>
+                        
+                        <div class="absolute top-2 right-2 z-20 flex flex-col gap-1 items-end" :class="movie.status === 'watchlist' ? 'mt-6' : ''">
+                            <div x-show="movie.rating > 0" class="bg-black/80 backdrop-blur text-yellow-400 text-xs font-bold px-1.5 py-1 rounded border border-yellow-500/30 shadow-lg flex items-center gap-1">
+                                <span x-text="movie.rating"></span><span>★</span>
+                            </div>
+                            <div x-show="tmdbData[movie.uniqueId]?.vote_average" class="bg-black/80 backdrop-blur text-blue-400 text-xs font-bold px-1.5 py-1 rounded border border-blue-500/30 shadow-lg flex items-center gap-1">
+                                <span x-text="tmdbData[movie.uniqueId]?.vote_average.toFixed(1)"></span><span>🌍</span>
+                            </div>
+                        </div>
+
+                        <div class="absolute inset-0 bg-gradient-to-t from-gray-900 via-gray-900/50 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex flex-col justify-end p-4 pointer-events-none">
+                            <h3 class="font-bold text-white leading-tight drop-shadow-md" x-text="movie.title"></h3>
+                            <div class="text-xs text-gray-300 mt-1" x-text="movie.year"></div>
+                        </div>
+                    </div>
+
+                    <button x-show="isAdmin" @click.stop="toggleLike(movie, $event)" 
+                            class="absolute bottom-2 right-2 z-30 p-2 rounded-full backdrop-blur-md shadow-lg transition-all hover:scale-110 active:scale-95"
+                            :class="isSuperLike(movie) ? 'bg-pink-600 text-white animate-pop' : 'bg-gray-900/60 text-gray-400 hover:bg-pink-600 hover:text-white'">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" :class="{'fill-current': isSuperLike(movie)}" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" />
+                        </svg>
+                    </button>
+                    <div x-show="!isAdmin && isSuperLike(movie)" class="absolute bottom-2 right-2 z-20">
+                        <div class="bg-pink-600 p-1.5 rounded-full shadow-lg">
+                             <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3 text-white fill-current" viewBox="0 0 24 24"><path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/></svg>
+                        </div>
+                    </div>
+                </div>
+            </template>
+        </div>
+    </main>
+
+    <div x-show="modalOpen" class="fixed inset-0 z-[100] overflow-y-auto" x-cloak>
+        <div class="fixed inset-0 bg-black/90 backdrop-blur-md transition-opacity" @click="closeModal()"></div>
+        <div class="flex min-h-full items-center justify-center p-4">
+            <div class="relative bg-gray-800 rounded-2xl max-w-4xl w-full border border-gray-700 shadow-2xl overflow-hidden flex flex-col md:flex-row pointer-events-auto">
+                
+                <div class="w-full md:w-1/3 bg-black relative aspect-[2/3] md:aspect-auto">
+                    <img :src="tmdbData[selectedMovie.uniqueId]?.poster || `https://placehold.co/400x600/1a202c/cbd5e0?text=${encodeURIComponent(selectedMovie.title || '')}`" class="w-full h-full object-cover">
+                </div>
+                
+                <div class="w-full md:w-2/3 p-6 md:p-8 flex flex-col bg-gray-800">
+                    <div class="flex justify-between items-start gap-4">
+                        <div>
+                            <h2 class="text-3xl md:text-4xl font-bold text-white leading-tight" x-text="selectedMovie.title"></h2>
+                            <div class="flex flex-wrap items-center gap-3 mt-3 text-sm text-gray-400">
+                                <span x-text="selectedMovie.year" class="font-mono text-gray-300"></span>
+                                <span x-show="selectedMovie.status === 'watchlist'" class="bg-amber-500/20 text-amber-500 border border-amber-500/50 px-2 py-0.5 rounded text-xs font-bold uppercase tracking-wider">Watchlist</span>
+                                
+                                <button x-show="trailerKey" @click="openTrailer(trailerKey)" class="flex items-center gap-1 text-red-400 hover:text-red-300 font-bold uppercase text-xs border border-red-500/30 px-2 py-0.5 rounded hover:bg-red-900/20 transition">
+                                    <span>▶</span> Trailer
+                                </button>
+                            </div>
+                        </div>
+                        <button @click="closeModal()" class="bg-gray-700 hover:bg-gray-600 rounded-full p-2 text-gray-300">✕</button>
+                    </div>
+
+                    <div class="mt-4 flex flex-wrap gap-2">
+                        <template x-for="genre in getMovieGenres(selectedMovie)" :key="genre">
+                            <span class="text-xs font-medium bg-indigo-900/50 text-indigo-300 border border-indigo-500/30 px-2.5 py-1 rounded-full" x-text="genre"></span>
+                        </template>
+                    </div>
+
+                    <div class="mt-5" x-show="getMovieCast(selectedMovie).length > 0">
+                         <div class="text-xs text-gray-500 uppercase font-bold tracking-wider">Starring</div>
+                         <div class="text-sm text-gray-300" x-text="getMovieCast(selectedMovie).join(', ')"></div>
+                    </div>
+
+                    <div class="mt-6 flex-grow">
+                        <h3 class="text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Review</h3>
+                        <div class="text-gray-300 text-base leading-relaxed whitespace-pre-wrap max-h-48 overflow-y-auto pr-2 scrollbar-thin" x-text="selectedMovie.review || 'No review written.'"></div>
+                    </div>
+
+                    <div class="mt-6 pt-4 border-t border-gray-700 flex justify-between items-center">
+                         <button x-show="isAdmin" @click="toggleLike(selectedMovie, $event)" class="flex items-center gap-2 font-bold uppercase text-sm transition-colors"
+                                :class="isSuperLike(selectedMovie) ? 'text-pink-500' : 'text-gray-400 hover:text-white'">
+                            <span x-text="isSuperLike(selectedMovie) ? '❤️ Remove Super Like' : '♡ Add Super Like'"></span>
+                        </button>
+                        <span class="text-xs text-gray-600" x-text="selectedMovie.date"></span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // --- 1. CONFIGURATION ---
+        const HARDCODED_API_KEY = "4f6cfd3df23efc4ccd6bdcd13a554c8d"; // PASTE KEY HERE
+        const ADMIN_PIN = "19931993"; 
+
+        // --- 2. UTILS ---
+        function confetti(x, y) {
+            const colors = ['#EC4899', '#8B5CF6', '#F59E0B', '#10B981'];
+            for (let i = 0; i < 12; i++) {
+                const el = document.createElement('div');
+                el.classList.add('particle');
+                document.body.appendChild(el);
+                const angle = Math.random() * Math.PI * 2;
+                const dist = 30 + Math.random() * 50;
+                el.style.left = x + 'px'; el.style.top = y + 'px';
+                el.style.backgroundColor = colors[Math.floor(Math.random() * colors.length)];
+                el.style.width = (Math.random() * 6 + 4) + 'px'; el.style.height = el.style.width;
+                el.style.setProperty('--tx', Math.cos(angle) * dist + 'px');
+                el.style.setProperty('--ty', Math.sin(angle) * dist + 'px');
+                setTimeout(() => el.remove(), 800);
+            }
+        }
+
+        function movieApp() {
+            return {
+                loading: true, movies: [], tmdbData: {}, genreMap: {}, manualLikes: {},
+                recommendations: [], search: '', sortBy: 'dateDesc', filterStatus: 'all', suggestGenre: '',
+                isAdmin: false, modalOpen: false, showStats: false, showRecs: false, recsLoading: false,
+                selectedMovie: {}, trailerKey: null, castInfo: [],
+                apiKey: HARDCODED_API_KEY || localStorage.getItem('tmdb_api_key') || '',
+
+                initApp() {
+                    const cTMDB = localStorage.getItem('tmdb_cache_v9'); if(cTMDB) this.tmdbData = JSON.parse(cTMDB);
+                    const cLikes = localStorage.getItem('manual_likes'); if(cLikes) this.manualLikes = JSON.parse(cLikes);
+                    const cGenres = localStorage.getItem('tmdb_genre_map'); if(cGenres) this.genreMap = JSON.parse(cGenres);
+                    this.isAdmin = localStorage.getItem('is_admin') === 'true';
+                    this.loadData();
+                },
+
+                toggleAdmin() {
+                    if (this.isAdmin) { this.isAdmin = false; localStorage.setItem('is_admin', false); }
+                    else { if(prompt("Enter PIN:") === ADMIN_PIN) { this.isAdmin = true; localStorage.setItem('is_admin', true); } }
+                },
+
+                async loadData() {
+                    const files = ['ratings.csv', 'reviews.csv', 'watchlist.csv'];
+                    const parseFile = (file) => new Promise(resolve => {
+                        Papa.parse(file, { download: true, header: true, skipEmptyLines: true, 
+                            complete: res => resolve({ name: file, data: res.data }), error: () => resolve({ name: file, data: [] }) });
+                    });
+                    const results = await Promise.all(files.map(parseFile));
+                    this.processAndMerge(results);
+                    this.loading = false;
+                    if (this.apiKey) { await this.fetchGenreList(); this.fetchTMDBData(); }
+                },
+
+                processAndMerge(results) {
+                    const map = new Map();
+                    results.forEach(file => {
+                        const isWatchlist = file.name.includes('watchlist');
+                        file.data.forEach(row => {
+                            const name = row['Name']; const year = row['Year'];
+                            if (!name || !year) return;
+                            const uniqueId = `${name.toLowerCase().trim()}-${year}`;
+                            if (!map.has(uniqueId)) map.set(uniqueId, { uniqueId, title: name, year, uri: row['Letterboxd URI']||row['URI'], rating: 0, review: '', tags: '', status: 'watched', date: row['Date']||row['Watched Date'] });
+                            const entry = map.get(uniqueId);
+                            if (row['Rating']) entry.rating = parseFloat(row['Rating']);
+                            if (row['Review']) entry.review = row['Review'];
+                            if (row['Tags']) entry.tags = row['Tags'];
+                            if (row['Letterboxd URI']) entry.uri = row['Letterboxd URI'];
+                            if (isWatchlist && entry.rating === 0) entry.status = 'watchlist';
+                            else if (!isWatchlist) entry.status = 'watched';
+                        });
+                    });
+                    this.movies = Array.from(map.values());
+                },
+
+                isSuperLike(m) { return (this.manualLikes[m.uniqueId] !== undefined) ? this.manualLikes[m.uniqueId] : (m.rating >= 4.5 || (m.tags && m.tags.includes('fav'))); },
+                
+                toggleLike(m, e) {
+                    if (!this.isAdmin) return;
+                    const status = this.isSuperLike(m);
+                    this.manualLikes[m.uniqueId] = !status;
+                    localStorage.setItem('manual_likes', JSON.stringify(this.manualLikes));
+                    if (!status && e) confetti(e.clientX, e.clientY);
+                },
+
+                async fetchTMDBData() {
+                    let changed = false;
+                    for (const m of this.movies) {
+                        if (this.tmdbData[m.uniqueId]?.cast) continue;
+                        try {
+                            const sUrl = `https://api.themoviedb.org/3/search/movie?api_key=${this.apiKey}&query=${encodeURIComponent(m.title)}&year=${m.year}`;
+                            const sRes = await fetch(sUrl); const sData = await sRes.json();
+                            if (sData.results?.[0]) {
+                                const hit = sData.results[0];
+                                const cRes = await fetch(`https://api.themoviedb.org/3/movie/${hit.id}/credits?api_key=${this.apiKey}`);
+                                const cData = await cRes.json();
+                                this.tmdbData[m.uniqueId] = {
+                                    tmdb_id: hit.id, poster: hit.poster_path ? `https://image.tmdb.org/t/p/w500${hit.poster_path}` : null,
+                                    vote_average: hit.vote_average, popularity: hit.popularity,
+                                    genres: (hit.genre_ids||[]).map(id => this.genreMap[id]).filter(Boolean),
+                                    cast: cData.cast ? cData.cast.slice(0, 5).map(c => c.name) : []
+                                };
+                                changed = true;
+                            }
+                        } catch (e) {}
+                        await new Promise(r => setTimeout(r, 250));
+                    }
+                    if (changed) localStorage.setItem('tmdb_cache_v9', JSON.stringify(this.tmdbData));
+                },
+
+                // --- FIX: ROBUST RECOMMENDATION ENGINE ---
+                async generateRecommendations() {
+                    this.showRecs = true;
+                    this.recsLoading = true;
+                    this.recommendations = [];
+                    
+                    const myTitles = new Set(this.movies.map(m => m.title.toLowerCase()));
+                    let url = '';
+                    
+                    try {
+                        // STRATEGY 1: GENRE (Safe to randomize pages)
+                        if (this.suggestGenre) {
+                            const randomPage = Math.floor(Math.random() * 5) + 1;
+                            url = `https://api.themoviedb.org/3/discover/movie?api_key=${this.apiKey}&language=en-US&sort_by=vote_average.desc&vote_count.gte=300&with_genres=${this.suggestGenre}&page=${randomPage}`;
+                        } 
+                        // STRATEGY 2: MIXED / SURPRISE ME
+                        else {
+                            // Pick a random highly rated movie from your library as a "Seed"
+                            const seeds = this.movies.filter(m => m.rating >= 4 && this.tmdbData[m.uniqueId]?.tmdb_id);
+                            
+                            if (seeds.length > 0) {
+                                const seed = seeds[Math.floor(Math.random() * seeds.length)];
+                                // FIX: Do NOT randomize pages for specific movie recs, they often only have 1 page.
+                                url = `https://api.themoviedb.org/3/movie/${this.tmdbData[seed.uniqueId].tmdb_id}/recommendations?api_key=${this.apiKey}&language=en-US&page=1`;
+                            } else {
+                                // Fallback to global popular if you have no rated movies yet
+                                const randomPage = Math.floor(Math.random() * 10) + 1;
+                                url = `https://api.themoviedb.org/3/movie/popular?api_key=${this.apiKey}&language=en-US&page=${randomPage}`;
+                            }
+                        }
+
+                        const res = await fetch(url);
+                        const data = await res.json();
+                        
+                        if (!data.results) throw new Error("No results found");
+
+                        // Filter out movies already in library
+                        let candidates = data.results.filter(rec => !myTitles.has(rec.title.toLowerCase()));
+                        
+                        // Fallback if we filtered everything out
+                        if (candidates.length < 5) {
+                             const popRes = await fetch(`https://api.themoviedb.org/3/movie/popular?api_key=${this.apiKey}&page=${Math.floor(Math.random()*5)+1}`);
+                             const popData = await popRes.json();
+                             const freshPop = popData.results.filter(rec => !myTitles.has(rec.title.toLowerCase()));
+                             candidates = [...candidates, ...freshPop];
+                        }
+
+                        // Hidden Gem Logic (Rating >= 7.5, Popularity < 20, Votes < 4000)
+                        const gemIdx = candidates.findIndex(m => m.vote_average >= 7.5 && m.popularity < 20 && m.vote_count < 4000);
+                        if (gemIdx !== -1) {
+                            candidates[gemIdx].isHiddenGem = true;
+                            const gem = candidates.splice(gemIdx, 1)[0];
+                            candidates.unshift(gem);
+                        }
+
+                        this.recommendations = candidates.slice(0, 5);
+
+                    } catch(e) { 
+                        console.error("Recs Error:", e);
+                        // Fail gracefully
+                        this.recommendations = [];
+                    } finally {
+                        this.recsLoading = false;
+                    }
+                },
+
+                async fetchGenreList() {
+                    if (Object.keys(this.genreMap).length > 0) return;
+                    try {
+                        const res = await fetch(`https://api.themoviedb.org/3/genre/movie/list?api_key=${this.apiKey}`);
+                        const data = await res.json();
+                        data.genres.forEach(g => this.genreMap[g.id] = g.name);
+                        localStorage.setItem('tmdb_genre_map', JSON.stringify(this.genreMap));
+                    } catch (e) {}
+                },
+                
+                async openModal(m) {
+                    this.selectedMovie = m; this.trailerKey = null; this.modalOpen = true;
+                    const tid = this.tmdbData[m.uniqueId]?.tmdb_id;
+                    if (tid && this.apiKey) {
+                        const res = await fetch(`https://api.themoviedb.org/3/movie/${tid}/videos?api_key=${this.apiKey}`);
+                        const data = await res.json();
+                        const t = data.results.find(v => v.site === "YouTube" && v.type === "Trailer") || data.results[0];
+                        if(t) this.trailerKey = t.key;
+                    }
+                },
+
+                closeModal() { this.modalOpen = false; },
+                openTrailer(k) { window.open(`https://www.youtube.com/watch?v=${k}`, '_blank'); },
+                getMovieGenres(m) { return this.tmdbData[m.uniqueId]?.genres || []; },
+                getMovieCast(m) { return this.tmdbData[m.uniqueId]?.cast || []; },
+
+                get filteredMovies() {
+                    let res = this.movies;
+                    if (this.search) {
+                        const q = this.search.toLowerCase();
+                        res = res.filter(m => m.title.toLowerCase().includes(q) || m.year.toString().includes(q) || this.getMovieGenres(m).join(' ').toLowerCase().includes(q));
+                    }
+                    if (this.filterStatus === 'watchlist') res = res.filter(m => m.status === 'watchlist');
+                    if (this.filterStatus === 'watched') res = res.filter(m => m.status === 'watched');
+                    if (this.filterStatus === 'superlike') res = res.filter(m => this.isSuperLike(m));
+
+                    return res.sort((a, b) => {
+                        switch(this.sortBy) {
+                            case 'dateDesc': return new Date(b.date) - new Date(a.date);
+                            case 'ratingDesc': return b.rating - a.rating;
+                            case 'ratingAsc': return a.rating - b.rating;
+                            case 'tmdbDesc': return (this.tmdbData[b.uniqueId]?.vote_average||0) - (this.tmdbData[a.uniqueId]?.vote_average||0);
+                            case 'popularity': return (this.tmdbData[b.uniqueId]?.popularity||0) - (this.tmdbData[a.uniqueId]?.popularity||0);
+                            case 'yearDesc': return b.year - a.year;
+                            case 'titleAsc': return a.title.localeCompare(b.title);
+                            default: return 0;
+                        }
+                    });
+                },
+
+                get averageRating() {
+                    const r = this.movies.filter(m => m.rating > 0);
+                    return r.length ? (r.reduce((a, b) => a + b.rating, 0) / r.length).toFixed(2) : 0;
+                },
+                get watchedCount() { return this.movies.filter(m => m.status === 'watched').length; },
+                get superLikeCount() { return this.movies.filter(m => this.isSuperLike(m)).length; },
+                get averageYear() {
+                    const v = this.movies.filter(m => parseInt(m.year) > 1900);
+                    return v.length ? Math.round(v.reduce((a, b) => a + parseInt(b.year), 0) / v.length) : 0;
+                },
+                get genreStats() {
+                    const c = {}; this.movies.forEach(m => this.getMovieGenres(m).forEach(g => c[g] = (c[g]||0)+1));
+                    return Object.entries(c).map(([name, count]) => ({ name, count })).sort((a, b) => b.count - a.count).slice(0, 5);
+                },
+                get actorStats() {
+                    const c = {}; this.movies.forEach(m => this.getMovieCast(m).forEach(a => c[a] = (c[a]||0)+1));
+                    return Object.entries(c).map(([name, count]) => ({ name, count })).sort((a, b) => b.count - a.count).slice(0, 3);
+                },
+                get ratingDistribution() {
+                    const d = {}; [0.5,1,1.5,2,2.5,3,3.5,4,4.5,5].forEach(r => d[r] = 0);
+                    this.movies.forEach(m => { if (m.rating > 0) d[m.rating] = (d[m.rating]||0)+1; });
+                    return d;
+                }
+            }
+        }
+    </script>
