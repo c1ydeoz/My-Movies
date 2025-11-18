@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>CinemaLog v9</title>
+    <title>Movie Corner</title>
     
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
@@ -174,7 +174,7 @@
         <div class="max-w-7xl mx-auto px-4 py-4 flex flex-col md:flex-row items-center justify-between gap-4">
             <div @dblclick="toggleAdmin()" class="cursor-pointer select-none group" title="Double-click for Admin">
                 <h1 class="text-2xl font-bold text-white tracking-tight flex items-center gap-2">
-                    <span>Cinema<span class="text-indigo-500">Log</span></span>
+                    <span>Movie<span class="text-indigo-500">Corner</span></span>
                     <span x-show="isAdmin" class="text-[10px] bg-red-600 text-white px-1.5 rounded uppercase tracking-wider animate-fade-in">Admin</span>
                 </h1>
             </div>
@@ -583,4 +583,5 @@
                 }
             }
         }
+
     </script>
